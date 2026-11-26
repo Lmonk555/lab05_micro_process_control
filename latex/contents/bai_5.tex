@@ -1,0 +1,175 @@
+\section{Github}
+\label{sec:Github}
+For the sources code and schematic, please access to the following Github link: \href{https://github.com/Lmonk555/lab05_micro_process_control}{Link}
+
+
+
+
+
+
+
+
+
+
+\section{FSM Design}
+\subsection{Command Parser}
+
+\textbf{Purpose:} it reads the incoming bytes one at a time and decides whether they form a complete command, either \texttt{!RST\#} or \texttt{!OK\#}. It only recognises the text. It does not decide what to do about it. \\
+
+\begin{table}[H]
+    \centering
+    \begin{tabularx}{\linewidth}{|l|X|}
+        \hline
+        \textbf{State} & \textbf{Meaning} \\
+        \hline
+
+        \texttt{IDLE} &
+        Waiting for a \texttt{\#}. Everything else is ignored. \\
+        \hline
+
+        \texttt{START} &
+        A \texttt{\#} was seen, so a command may be starting. \\
+        \hline
+
+        \texttt{R}, \texttt{RS}, \texttt{RST} &
+        Following the path \texttt{\#}, \texttt{R}, \texttt{S}, \texttt{T}. \texttt{RST} means \texttt{\#RST} has been read and \texttt{\#} is expected. \\
+        \hline
+        
+        \texttt{O}, \texttt{OK} &
+        Following the path \texttt{\#}, \texttt{O}, \texttt{K}. \texttt{OK} means \texttt{\#OK} has been read and \texttt{\#} is expected. \\
+        \hline
+    \end{tabularx}
+    \caption{Parser states}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[>=Stealth, node distance=2.6cm, auto,
+    every state/.style={thick, minimum size=1.3cm, font=\small},
+    every edge/.style={draw, thick},
+    lbl/.style={font=\footnotesize}]
+
+    \node[state, initial, initial text=] (idle) {IDLE};
+    \node[state, right=of idle] (start) {START};
+    \node[state, above right=1.2cm and 2.4cm of start] (r)   {R};
+    \node[state, right=of r]  (rs)  {RS};
+    \node[state, right=of rs] (rst) {RST};
+    \node[state, below right=1.2cm and 2.4cm of start] (o)  {O};
+    \node[state, right=of o]  (ok)  {OK};
+
+    \path[->]
+        (idle)  edge node[lbl]{`!'} (start)
+        (start) edge[bend left=15] node[lbl]{`R'} (r)
+        (r)     edge node[lbl]{`S'} (rs)
+        (rs)    edge node[lbl]{`T'} (rst)
+        (start) edge[bend right=15] node[swap,lbl]{`O'} (o)
+        (o)     edge node[lbl]{`K'} (ok)
+        (rst)   edge[bend right=40] node[lbl,above]{`\#' / \texttt{command\_data = CMD\_RST}, \texttt{command\_flag = 1}} (idle)
+        (ok)    edge[bend left=40] node[lbl,below]{`\#' / \texttt{command\_data = CMD\_OK}, \texttt{command\_flag = 1}} (idle);
+\end{tikzpicture}
+\caption{Command parser FSM. From any state, `!' goes to START; any other unexpected character goes back to IDLE.}
+\end{figure}
+
+
+\subsection{UART Communication}
+
+\textbf{Purpose:} it holds the actual protocol logic: who sends what, and when. It only looks at finished commands from FSM 1 and never touches raw characters. \\
+
+\begin{table}[H]
+    \centering
+    \begin{tabularx}{\linewidth}{|l|X|}
+        \hline
+        \textbf{State} & \textbf{Meaning} \\
+        \hline
+
+        \texttt{IDLE} &
+        No data exchange in progress. Waiting for \texttt{!RST\#} \\
+        \hline
+
+        \texttt{WAIT\_OK} &
+        A packet was sent, and the board is waiting for \texttt{!OK\#} \\
+        \hline
+    \end{tabularx}
+    \caption{UART Communication states}
+\end{table}
+
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[>=Stealth, node distance=6cm, auto,
+    every state/.style={thick, minimum size=1.6cm, font=\small},
+    every edge/.style={draw, thick},
+    lbl/.style={font=\footnotesize, align=center}]
+
+    \node[state, initial, initial text=] (idle) {IDLE};
+    \node[state, right=of idle] (wait) {WAIT\_OK};
+
+    \path[->]
+        (idle) edge[bend left=20] node[lbl]{\texttt{command\_flag = 1} and \texttt{command\_data = CMD\_RST} /\\ read ADC, send \texttt{!ADC=xxxx\#}, start 3 s timer} (wait)
+        (wait) edge[bend left=20] node[lbl]{\texttt{command\_flag = 1} and \texttt{command\_data = CMD\_OK}} (idle)
+        (wait) edge[loop right] node[lbl]{timeout 3 s /\\ resend same packet} (wait)
+        (idle) edge[loop left] node[lbl]{other} (idle);
+\end{tikzpicture}
+\caption{UART communication FSM}
+\end{figure}
+
+
+
+
+
+
+
+
+
+
+\section{Test cases}
+
+\begin{longtable}{|c|p{4.3cm}|p{6.2cm}|c|}
+        \caption{Test cases of the UART communication system}\\
+        \hline
+        \textbf{No.} & \textbf{Input / action} & \textbf{Expected result} & \textbf{Result} \\
+        \hline
+        \endfirsthead
+        \hline
+        \textbf{No.} & \textbf{Input / action} & \textbf{Expected result} & \textbf{Result} \\
+        \hline
+    \endhead
+
+    \multicolumn{4}{|l|}{\textbf{1. Normal protocol and ADC values}} \\
+    \hline
+    1 & \texttt{!RST\#} & Reply \texttt{!ADC=xxxx\#} for every 3 seconds & Passed \\
+    \hline
+    2 & \texttt{!RST\#} $\to$ \texttt{!OK\#} & Reply stops, no resend after 3 s & Passed \\
+    \hline
+    3 & \texttt{!RST\#} $\to$ \texttt{!OK\#} $\to$ \texttt{!RST\#} & Reply ADC value normally again & Passed \\
+    \hline
+
+    \multicolumn{4}{|l|}{\textbf{2. Invalid or noisy input}} \\
+    \hline
+    4 & \texttt{RST\#} (no \texttt{!}) & No reply & Passed \\
+    \hline
+    5 & \texttt{!RST}, then later \texttt{\#} alone & No reply after \texttt{!RST}; reply after the \texttt{\#} & Passed \\
+    \hline
+    6 & \texttt{!rst\#} (lowercase) & No reply (case-sensitive) & Passed \\
+    \hline
+    7 & \texttt{!RSX\#} and \texttt{!OKK\#} & No reply & Passed \\
+    \hline
+    8 & \texttt{!!RST\#} and \texttt{!RS!RST\#} & Reply when getting the complete \texttt{!RST\#} & Passed \\
+    \hline
+    9 & \texttt{abc!RST\#xyz} & Reply when getting the complete \texttt{!RST\#} & Passed \\
+    \hline
+    10 & \texttt{!ADC=1234\#} & No reply & Passed \\
+    \hline
+    11 & More than 30 junk characters, then \texttt{!RST\#} & Reply when getting the complete \texttt{!RST\#} & Passed \\
+    \hline
+
+    \multicolumn{4}{|l|}{\textbf{3. State machine edge cases}} \\
+    \hline
+    12 & \texttt{!OK\#} without a previous \texttt{!RST\#} & No reply, stays in IDLE & Passed \\
+    \hline
+    13 & \texttt{!RST\#}, then \texttt{!RST\#} again while waiting & No new reply from the second one, the 3s resend continues & Passed \\
+    \hline
+    14 & \texttt{!RST\#}, \texttt{!OK\#}, \texttt{!OK\#} & The extra \texttt{!OK\#} is ignored, behave as case [2] & Passed \\
+    \hline
+    15 & \texttt{!RST\#} and \texttt{!OK\#} typed as fast as possible & Still works, behave as case [2] & Passed \\ \hline
+\end{longtable}
